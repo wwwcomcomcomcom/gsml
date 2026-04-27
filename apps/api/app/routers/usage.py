@@ -1,0 +1,46 @@
+from collections import defaultdict
+from datetime import datetime, timedelta
+
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy.orm import Session
+
+from ..db import get_db
+from ..deps import get_current_user
+from ..models import RequestLog, User
+from ..schemas import UsageHistoryItem, UsageTodayResponse
+from ..timezone_util import next_midnight_local
+
+router = APIRouter(prefix="/api/usage", tags=["usage"])
+
+
+@router.get("/today", response_model=UsageTodayResponse)
+def usage_today(user: User = Depends(get_current_user)) -> UsageTodayResponse:
+    return UsageTodayResponse(
+        used=user.current_usage,
+        limit=user.usage_limit,
+        reset_at=next_midnight_local(),
+    )
+
+
+@router.get("/history", response_model=list[UsageHistoryItem])
+def usage_history(
+    days: int = Query(default=7, ge=1, le=90),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[UsageHistoryItem]:
+    since = datetime.utcnow() - timedelta(days=days)
+    rows = (
+        db.query(RequestLog)
+        .filter(RequestLog.user_id == user.id, RequestLog.created_at >= since)
+        .all()
+    )
+    bucket: dict[str, dict[str, int]] = defaultdict(lambda: {"tokens": 0, "count": 0})
+    for r in rows:
+        d = r.created_at.date().isoformat()
+        bucket[d]["tokens"] += r.prompt_tokens + r.completion_tokens
+        bucket[d]["count"] += 1
+    items = [
+        UsageHistoryItem(date=d, total_tokens=v["tokens"], request_count=v["count"])
+        for d, v in sorted(bucket.items())
+    ]
+    return items
