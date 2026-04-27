@@ -1,0 +1,26 @@
+services:
+  api:
+    build: ./apps/api
+    container_name: gsml-api
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  web:
+    build:
+      context: ./apps/web
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000}
+        VITE_OAUTH_CLIENT_ID: ${OAUTH_CLIENT_ID}
+        VITE_OAUTH_REDIRECT_URI: ${OAUTH_REDIRECT_URI}
+    container_name: gsml-web
+    restart: unless-stopped
+    ports:
+      - "5173:80"
+    depends_on:
+      - api
