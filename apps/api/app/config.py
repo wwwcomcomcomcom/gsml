@@ -1,22 +1,32 @@
+from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+def _find_env_file() -> Path | None:
+    for parent in Path(__file__).resolve().parents:
+        candidate = parent / ".env"
+        if candidate.is_file():
+            return candidate
+    return None
+
+
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=_find_env_file(), extra="ignore")
 
     APP_TIMEZONE: str = "Asia/Seoul"
     CORS_ORIGINS: str = "http://localhost:5173"
 
     UPSTREAM_BASE_URL: str = "http://localhost:8080"
     UPSTREAM_TIMEOUT: int = 600
-    LLAMA_SLOT_COUNT: int = 0        # 0=비활성. llama-server --parallel 값과 일치시킬 것
+    LLAMA_SLOT_COUNT: int = 0  # 0=비활성. llama-server --parallel 값과 일치시킬 것
     LLAMA_CHAT_TEMPLATE: str = "chatml"
 
     OAUTH_CLIENT_ID: str = ""
     OAUTH_CLIENT_SECRET: str = ""
     OAUTH_REDIRECT_URI: str = ""
-    OAUTH_AUTH_BASE: str
-    OAUTH_RESOURCE_BASE: str
+    OAUTH_AUTH_BASE: str = ""
+    OAUTH_RESOURCE_BASE: str = ""
 
     JWT_SECRET: str = "change-me"
     JWT_EXPIRE_HOURS: int = 24
