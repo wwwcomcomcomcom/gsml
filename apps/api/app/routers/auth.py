@@ -27,8 +27,6 @@ async def oauth_callback(
                 "redirect_uri": settings.OAUTH_REDIRECT_URI,
             },
         )
-        if token_resp.status_code != 200:
-            raise HTTPException(status_code=401, detail="OAuth token exchange failed")
         access_token = token_resp.json().get("access_token")
         if not access_token:
             raise HTTPException(status_code=401, detail="No access token from OAuth")
