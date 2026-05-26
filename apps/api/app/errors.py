@@ -39,3 +39,7 @@ def rate_limited() -> OpenAIError:
 
 def upstream_error(detail: str = "Upstream LLM error.") -> OpenAIError:
     return OpenAIError(502, detail, "api_error", "upstream_error")
+
+
+def service_unavailable(msg: str = "Service unavailable") -> OpenAIError:
+    return OpenAIError(503, msg, "api_error", "service_unavailable")

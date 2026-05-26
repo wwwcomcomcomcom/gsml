@@ -1,0 +1,17 @@
+# llama-server 멀티인스턴스 로드밸런서 설정
+# slot_count는 llama-server --parallel 값과 일치시킬 것.
+# url 트레일링 슬래시 없음.
+
+health_check:
+  interval_seconds: 30   # 헬스체크 주기 (기본 30)
+  fail_threshold: 2       # 연속 실패 횟수 → DEAD 판정 (기본 2)
+
+instances:
+  - url: http://127.0.0.1:8081
+    slot_count: 16
+  - url: http://127.0.0.1:8082
+    slot_count: 16
+  - url: http://127.0.0.1:8083
+    slot_count: 16
+  - url: http://127.0.0.1:8084
+    slot_count: 16

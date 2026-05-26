@@ -2,12 +2,10 @@
 
 지원: GET /v1/models, POST /v1/chat/completions (stream + non-stream).
 
-미지원 엔드포인트(/v1/completions, /v1/embeddings)는 라우팅하지 않는다.
-멀티 모델로 확장하려면 upstream/__init__.py의 UPSTREAMS dict에 항목을 추가하고,
-chat_completions 핸들러는 이미 `resolve(model)`을 사용하므로 자동 라우팅된다.
+conv_id 기반 스티키 라우팅은 Balancer가 담당한다.
+모든 추론 요청은 llama-server 네이티브 /completion 경로로 전달된다.
 """
 import asyncio
-import json
 import time
 import uuid
 
@@ -20,10 +18,10 @@ from ..concurrency import acquire_slot, release, try_acquire
 from ..config import settings
 from ..db import get_db
 from ..deps import get_api_user
-from ..errors import insufficient_quota, upstream_error
+from ..errors import insufficient_quota, service_unavailable, upstream_error
 from ..models import RequestLog, User
-from ..slot_manager import get_slot_manager
-from ..upstream import resolve
+from ..upstream import get_balancer
+from ..upstream.balancer import RouteEntry
 from ..upstream.client import make_client
 from ..upstream.llama_native import (
     call_native_non_stream,
@@ -85,8 +83,11 @@ def _log_and_charge(
 @router.get("/models")
 async def list_models(user: User = Depends(get_api_user)):
     """업스트림 /v1/models 응답을 그대로 프록시."""
-    cfg = resolve(None)
-    async with make_client(cfg) as client:
+    alive = get_balancer().alive_nodes
+    if not alive:
+        raise service_unavailable("No available inference instances.")
+    base_url = alive[0].url
+    async with make_client(base_url, settings.UPSTREAM_TIMEOUT) as client:
         try:
             r = await client.get("/v1/models")
         except httpx.HTTPError as e:
@@ -121,153 +122,48 @@ async def chat_completions(
         opts["include_usage"] = True
         body["stream_options"] = opts
 
-    cfg = resolve(model)
+    conv_id = _conv_id(user.id, x_conversation_id)
     headers = _quota_headers(user)
 
-    # 슬롯 고정 경로: LLAMA_SLOT_COUNT > 0일 때만 활성화
-    if settings.LLAMA_SLOT_COUNT > 0:
-        slot_id = get_slot_manager().acquire(_conv_id(user.id, x_conversation_id))
-        if not is_stream:
-            async with acquire_slot(user.id, user.max_concurrent):
-                return await _do_native_non_stream(db, user, body, cfg, headers, slot_id)
-        try_acquire(user.id, user.max_concurrent)
-        try:
-            return await _do_native_stream(db, user, body, messages, cfg, headers, slot_id)
-        except BaseException:
-            release(user.id)
-            raise
+    # Balancer에서 인스턴스 + 슬롯 획득
+    try:
+        route = get_balancer().acquire(conv_id)
+    except RuntimeError:
+        raise service_unavailable("No available inference instances.")
 
     if not is_stream:
         async with acquire_slot(user.id, user.max_concurrent):
-            return await _do_non_stream(db, user, body, cfg, headers)
+            try:
+                return await _do_native_non_stream(db, user, body, headers, route)
+            finally:
+                get_balancer().release(conv_id)
 
-    # 스트리밍은 response 반환 이후 generator가 실행되므로, async-with로 감싸면
-    # 실제 스트림 도중 슬롯이 해제된다. 슬롯을 여기서 잡고 generator의 finally에서
-    # 해제하도록 명시적으로 처리한다.
     try_acquire(user.id, user.max_concurrent)
     try:
-        return await _do_stream(db, user, body, messages, cfg, headers)
+        return await _do_native_stream(db, user, body, messages, headers, route, conv_id)
     except BaseException:
         release(user.id)
+        get_balancer().release(conv_id)
         raise
 
 
-async def _do_non_stream(
-    db: Session, user: User, body: dict, cfg, headers: dict
-) -> JSONResponse:
-    started = time.perf_counter()
-    async with make_client(cfg) as client:
-        try:
-            r = await client.post("/v1/chat/completions", json=body)
-        except httpx.HTTPError as e:
-            raise upstream_error(f"Upstream error: {e}")
-    latency_ms = int((time.perf_counter() - started) * 1000)
-    payload = r.json()
-
-    usage = payload.get("usage") or {}
-    pt = int(usage.get("prompt_tokens") or 0)
-    ct = int(usage.get("completion_tokens") or 0)
-    if pt == 0 and ct == 0:
-        # 폴백: 최소한 prompt만 추정 (응답 본문 직렬화는 회피)
-        pt = count_messages(body.get("messages", []))
-
-    _log_and_charge(db, user, body.get("model", ""), pt, ct, r.status_code, latency_ms, None)
-
-    out_headers = dict(headers)
-    out_headers["X-RateLimit-Remaining-Tokens"] = str(max(0, user.usage_limit - user.current_usage))
-    return JSONResponse(status_code=r.status_code, content=payload, headers=out_headers)
-
-
-async def _do_stream(
-    db: Session, user: User, body: dict, messages: list, cfg, headers: dict
-) -> StreamingResponse:
-    started = time.perf_counter()
-    state = {
-        "ttft_ms": None,
-        "prompt_tokens": 0,
-        "completion_tokens": 0,
-        "local_completion_text": [],
-        "got_upstream_usage": False,
-    }
-
-    async def gen():
-        try:
-            async with make_client(cfg) as client:
-                async with client.stream("POST", "/v1/chat/completions", json=body) as r:
-                    async for line in r.aiter_lines():
-                        if state["ttft_ms"] is None and line.strip():
-                            state["ttft_ms"] = int((time.perf_counter() - started) * 1000)
-                        if line.startswith("data: "):
-                            data = line[6:].strip()
-                            if data and data != "[DONE]":
-                                _absorb_chunk(state, data)
-                        # SSE는 빈 줄 포함 그대로 전달
-                        yield (line + "\n").encode("utf-8")
-        except (asyncio.CancelledError, httpx.HTTPError):
-            # 클라이언트 abort 또는 업스트림 오류 — 이미 받은 분만 차감
-            pass
-        finally:
-            try:
-                _finalize_stream(db, user, body, messages, state, started)
-            finally:
-                release(user.id)
-
-    out_headers = dict(headers)
-    out_headers["Content-Type"] = "text/event-stream"
-    out_headers["Cache-Control"] = "no-cache"
-    out_headers["Connection"] = "keep-alive"
-    return StreamingResponse(gen(), media_type="text/event-stream", headers=out_headers)
-
-
-def _absorb_chunk(state: dict, data: str) -> None:
-    try:
-        obj = json.loads(data)
-    except json.JSONDecodeError:
-        return
-    usage = obj.get("usage")
-    if usage:
-        state["prompt_tokens"] = int(usage.get("prompt_tokens") or state["prompt_tokens"])
-        state["completion_tokens"] = int(
-            usage.get("completion_tokens") or state["completion_tokens"]
-        )
-        state["got_upstream_usage"] = True
-    for choice in obj.get("choices") or []:
-        delta = choice.get("delta") or {}
-        content = delta.get("content")
-        if isinstance(content, str):
-            state["local_completion_text"].append(content)
-
-
-def _finalize_stream(
-    db: Session, user: User, body: dict, messages: list, state: dict, started: float
-) -> None:
-    latency_ms = int((time.perf_counter() - started) * 1000)
-    if not state["got_upstream_usage"]:
-        # 폴백: tiktoken으로 로컬 카운트
-        state["prompt_tokens"] = count_messages(messages)
-        state["completion_tokens"] = count_text("".join(state["local_completion_text"]))
-    _log_and_charge(
-        db,
-        user,
-        body.get("model", ""),
-        state["prompt_tokens"],
-        state["completion_tokens"],
-        200,
-        latency_ms,
-        state["ttft_ms"],
-    )
-
-
 # ---------------------------------------------------------------------------
-# 네이티브 /completion 경로 (LLAMA_SLOT_COUNT > 0)
+# 네이티브 /completion 경로 헬퍼
 # ---------------------------------------------------------------------------
+
 
 async def _do_native_non_stream(
-    db: Session, user: User, body: dict, cfg, headers: dict, slot_id: int
+    db: Session,
+    user: User,
+    body: dict,
+    headers: dict,
+    route: RouteEntry,
 ) -> JSONResponse:
     started = time.perf_counter()
     model = body.get("model", "")
-    native = await call_native_non_stream(body, slot_id, cfg)
+    native = await call_native_non_stream(
+        body, route.slot_id, route.node.url, settings.UPSTREAM_TIMEOUT
+    )
     latency_ms = int((time.perf_counter() - started) * 1000)
     resp = native_to_openai_response(native, model)
     u = resp["usage"]
@@ -277,7 +173,13 @@ async def _do_native_non_stream(
 
 
 async def _do_native_stream(
-    db: Session, user: User, body: dict, messages: list, cfg, headers: dict, slot_id: int
+    db: Session,
+    user: User,
+    body: dict,
+    messages: list,
+    headers: dict,
+    route: RouteEntry,
+    conv_id: str,
 ) -> StreamingResponse:
     started = time.perf_counter()
     model = body.get("model", "")
@@ -286,7 +188,9 @@ async def _do_native_stream(
 
     async def gen():
         try:
-            async for chunk in call_native_stream(body, slot_id, cfg):
+            async for chunk in call_native_stream(
+                body, route.slot_id, route.node.url, settings.UPSTREAM_TIMEOUT
+            ):
                 if state["ttft_ms"] is None:
                     state["ttft_ms"] = int((time.perf_counter() - started) * 1000)
                 if chunk.get("stop"):
@@ -304,11 +208,17 @@ async def _do_native_stream(
                 pt = state["prompt_tokens"] or count_messages(messages)
                 ct = state["completion_tokens"]
                 _log_and_charge(
-                    db, user, model, pt, ct, 200,
+                    db,
+                    user,
+                    model,
+                    pt,
+                    ct,
+                    200,
                     int((time.perf_counter() - started) * 1000),
                     state["ttft_ms"],
                 )
             finally:
+                get_balancer().release(conv_id)
                 release(user.id)
 
     out_headers = dict(headers)

@@ -19,9 +19,16 @@ async def lifespan(app: FastAPI):
     init_db()
     catch_up_resets()
     scheduler = start_scheduler()
+
+    # Balancer 시작 (upstream.yml 파싱 + 헬스체크 태스크)
+    from .upstream import init_balancer
+    balancer = init_balancer()
+    balancer.start()
+
     try:
         yield
     finally:
+        await balancer.stop()
         scheduler.shutdown(wait=False)
 
 

@@ -9,7 +9,6 @@ import uuid
 
 import httpx
 
-from . import UpstreamConfig
 from .client import make_client
 
 
@@ -17,10 +16,11 @@ from .client import make_client
 # 포맷 변환
 # ---------------------------------------------------------------------------
 
+
 def messages_to_chatml(messages: list[dict]) -> str:
     """OpenAI messages 리스트를 ChatML prompt 문자열로 변환한다.
 
-    어시스턴트 턴 오프너(<|im_start|>assistant\n)를 닫지 않고 끝내어
+    어시스턴트 턴 오프너(<|im_start|>assistant\\n)를 닫지 않고 끝내어
     llama-server가 그 지점에서 이어 생성하도록 한다.
     """
     parts: list[str] = []
@@ -111,8 +111,11 @@ def native_chunk_to_sse(chunk: dict, cid: str, model: str) -> str:
 # HTTP 호출
 # ---------------------------------------------------------------------------
 
-async def call_native_non_stream(body: dict, slot_id: int, cfg: UpstreamConfig) -> dict:
-    async with make_client(cfg) as client:
+
+async def call_native_non_stream(
+    body: dict, slot_id: int, base_url: str, timeout: int = 600
+) -> dict:
+    async with make_client(base_url, timeout) as client:
         try:
             r = await client.post("/completion", json=build_native_request(body, slot_id))
         except httpx.HTTPError as e:
@@ -121,9 +124,9 @@ async def call_native_non_stream(body: dict, slot_id: int, cfg: UpstreamConfig) 
     return r.json()
 
 
-async def call_native_stream(body: dict, slot_id: int, cfg: UpstreamConfig):
+async def call_native_stream(body: dict, slot_id: int, base_url: str, timeout: int = 600):
     """네이티브 /completion SSE 청크를 dict로 파싱해 yield한다."""
-    async with make_client(cfg) as client:
+    async with make_client(base_url, timeout) as client:
         async with client.stream("POST", "/completion", json=build_native_request(body, slot_id)) as r:
             async for line in r.aiter_lines():
                 if line.startswith("data: ") and (data := line[6:].strip()):

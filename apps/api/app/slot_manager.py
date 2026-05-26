@@ -1,15 +1,9 @@
-"""대화별 llama-server 슬롯 고정 (KV cache 재사용).
+"""[DEPRECATED] 대화별 llama-server 슬롯 고정.
 
-concurrency.py와 동일하게 단일 프로세스·asyncio 단일 스레드를 가정하므로 락이 없다.
-SlotManager는 모듈 수준 싱글턴으로 관리된다.
-
-슬롯이 부족하면 LRU(가장 오래전에 접근한) 대화를 퇴거시키고 그 슬롯을 재사용한다.
-퇴거된 대화의 다음 요청은 새 슬롯을 받게 되어 llama-server가 캐시를 재구축한다.
+기능이 upstream/instance_node.py의 InstanceSlotManager로 이전되었다.
+이 모듈은 더 이상 openai_proxy.py에서 사용되지 않는다. 추후 제거 예정.
 """
 from collections import OrderedDict
-
-from .config import settings
-
 
 class SlotManager:
     def __init__(self, capacity: int) -> None:
@@ -39,8 +33,7 @@ class SlotManager:
 _manager: SlotManager | None = None
 
 
-def get_slot_manager() -> SlotManager:
-    global _manager
-    if _manager is None:
-        _manager = SlotManager(settings.LLAMA_SLOT_COUNT)
-    return _manager
+def get_slot_manager() -> SlotManager:  # pragma: no cover — deprecated, use Balancer instead
+    raise RuntimeError(
+        "get_slot_manager() is deprecated. Use apps.api.app.upstream.get_balancer() instead."
+    )

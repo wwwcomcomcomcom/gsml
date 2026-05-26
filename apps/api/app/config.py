@@ -17,9 +17,7 @@ class Settings(BaseSettings):
     APP_TIMEZONE: str = "Asia/Seoul"
     CORS_ORIGINS: str = "http://localhost:5173"
 
-    UPSTREAM_BASE_URL: str = "http://localhost:8080"
     UPSTREAM_TIMEOUT: int = 600
-    LLAMA_SLOT_COUNT: int = 0  # 0=비활성. llama-server --parallel 값과 일치시킬 것
     LLAMA_CHAT_TEMPLATE: str = "chatml"
 
     OAUTH_CLIENT_ID: str = ""
