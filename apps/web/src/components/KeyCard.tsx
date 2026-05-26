@@ -117,8 +117,20 @@ function IssuedModal({ value, onClose }: { value: IssuedKey; onClose: () => void
         <div className="row" style={{ justifyContent: "flex-end", marginTop: 16 }}>
           <button
             className="secondary"
-            onClick={() => {
-              navigator.clipboard.writeText(value.api_key).then(() => setCopied(true));
+            onClick={async () => {
+              try {
+                await navigator.clipboard.writeText(value.api_key);
+                setCopied(true);
+              } catch {
+                const el = document.createElement("textarea");
+                el.value = value.api_key;
+                el.style.cssText = "position:fixed;opacity:0";
+                document.body.appendChild(el);
+                el.select();
+                document.execCommand("copy");
+                document.body.removeChild(el);
+                setCopied(true);
+              }
             }}
           >
             {copied ? "복사됨" : "복사"}
