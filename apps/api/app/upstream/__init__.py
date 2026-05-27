@@ -43,9 +43,24 @@ def load_upstream_config(path: Path) -> UpstreamFileConfig:
     return UpstreamFileConfig(instances=instances, health_check=hc)
 
 
-# 프로젝트 루트의 upstream.yml
-# __file__ = apps/api/app/upstream/__init__.py → parents[4] = project root
-_UPSTREAM_YML = Path(__file__).resolve().parents[4] / "upstream.yml"
+# upstream.yml 경로 결정 우선순위:
+# 1) UPSTREAM_YML 환경변수 (Docker 등 배포 환경에서 명시 지정)
+# 2) 현재 파일에서 위로 올라가며 upstream.yml을 탐색 (로컬 개발 자동 탐지)
+def _find_upstream_yml() -> Path:
+    import os
+    env_path = os.environ.get("UPSTREAM_YML")
+    if env_path:
+        return Path(env_path)
+    # 현재 파일 위치에서 루트까지 올라가며 upstream.yml 탐색
+    for parent in Path(__file__).resolve().parents:
+        candidate = parent / "upstream.yml"
+        if candidate.is_file():
+            return candidate
+    # 못 찾으면 기본 경로 반환 (init_balancer에서 RuntimeError 발생)
+    return Path(__file__).resolve().parents[0] / "upstream.yml"
+
+
+_UPSTREAM_YML = _find_upstream_yml()
 
 _balancer: Balancer | None = None
 
