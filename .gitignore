@@ -1,4 +1,5 @@
 .env
+upstream.yml
 data/
 __pycache__/
 *.pyc
