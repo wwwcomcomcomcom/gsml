@@ -7,11 +7,11 @@ health_check:
   fail_threshold: 2       # 연속 실패 횟수 → DEAD 판정 (기본 2)
 
 instances:
-  - url: http://127.0.0.1:8081
+  - url: http://host.docker.internal:8081
     slot_count: 16
-  - url: http://127.0.0.1:8082
+  - url: http://host.docker.internal:8082
     slot_count: 16
-  - url: http://127.0.0.1:8083
+  - url: http://host.docker.internal:8083
     slot_count: 16
-  - url: http://127.0.0.1:8084
+  - url: http://host.docker.internal:8084
     slot_count: 16
