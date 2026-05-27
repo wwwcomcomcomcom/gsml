@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 from ..concurrency import acquire_slot, release, try_acquire
 from ..config import settings
 from ..db import get_db
-from ..deps import get_api_user
+from ..deps import get_api_user, get_user_any
 from ..errors import insufficient_quota, service_unavailable, upstream_error
 from ..models import RequestLog, User
 from ..upstream import get_balancer
@@ -81,7 +81,7 @@ def _log_and_charge(
 
 
 @router.get("/models")
-async def list_models(user: User = Depends(get_api_user)):
+async def list_models(user: User = Depends(get_user_any)):
     """업스트림 /v1/models 응답을 그대로 프록시."""
     alive = get_balancer().alive_nodes
     if not alive:

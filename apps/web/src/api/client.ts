@@ -15,8 +15,13 @@ api.interceptors.response.use(
   (r) => r,
   (err) => {
     if (err?.response?.status === 401) {
-      authStore.clear();
-      if (location.pathname !== "/") location.href = "/";
+      // /v1/* 는 API Key 인증 경로이므로 JWT 세션과 무관 — 로그아웃하지 않는다.
+      const url: string = err?.config?.url || "";
+      const isOpenAIRoute = url.startsWith("/v1/") || url === "/v1";
+      if (!isOpenAIRoute) {
+        authStore.clear();
+        if (location.pathname !== "/") location.href = "/";
+      }
     }
     return Promise.reject(err);
   }
