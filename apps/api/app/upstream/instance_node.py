@@ -110,6 +110,7 @@ class InstanceNode:
         try:
             async with httpx.AsyncClient(base_url=self.url, timeout=timeout) as client:
                 r = await client.get("/health")
-                return r.status_code == 200
+                # 200: idle, 503: busy (슬롯 없음) — 둘 다 서버 살아있음
+                return r.status_code in (200, 503)
         except Exception:
             return False
