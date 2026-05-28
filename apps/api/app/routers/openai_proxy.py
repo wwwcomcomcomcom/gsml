@@ -64,6 +64,7 @@ def _log_and_charge(
     status_code: int,
     latency_ms: int,
     ttft_ms: int | None,
+    source: str = "api",
 ) -> None:
     user.current_usage += prompt_tokens + completion_tokens
     db.add(
@@ -75,6 +76,7 @@ def _log_and_charge(
             status_code=status_code,
             latency_ms=latency_ms,
             ttft_ms=ttft_ms,
+            source=source,
         )
     )
     db.commit()
@@ -158,6 +160,7 @@ async def _do_native_non_stream(
     body: dict,
     headers: dict,
     route: RouteEntry,
+    source: str = "api",
 ) -> JSONResponse:
     started = time.perf_counter()
     model = body.get("model", "")
@@ -167,7 +170,7 @@ async def _do_native_non_stream(
     latency_ms = int((time.perf_counter() - started) * 1000)
     resp = native_to_openai_response(native, model)
     u = resp["usage"]
-    _log_and_charge(db, user, model, u["prompt_tokens"], u["completion_tokens"], 200, latency_ms, None)
+    _log_and_charge(db, user, model, u["prompt_tokens"], u["completion_tokens"], 200, latency_ms, None, source)
     out = {**headers, "X-RateLimit-Remaining-Tokens": str(max(0, user.usage_limit - user.current_usage))}
     return JSONResponse(status_code=200, content=resp, headers=out)
 
@@ -180,6 +183,7 @@ async def _do_native_stream(
     headers: dict,
     route: RouteEntry,
     conv_id: str,
+    source: str = "api",
 ) -> StreamingResponse:
     started = time.perf_counter()
     model = body.get("model", "")
@@ -216,6 +220,7 @@ async def _do_native_stream(
                     200,
                     int((time.perf_counter() - started) * 1000),
                     state["ttft_ms"],
+                    source,
                 )
             finally:
                 get_balancer().release(conv_id)
