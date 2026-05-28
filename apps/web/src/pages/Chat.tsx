@@ -107,8 +107,8 @@ export default function Chat() {
       await createChatCompletion(
         { model: selectedModel, messages: apiMessages, temperature, max_tokens: maxTokens },
         (chunk) => setStreamingContent(prev => prev + chunk),
-        () => {
-          setMessages(prev => [...prev, { role: "assistant", content: streamingContent }]);
+        (fullContent) => {
+          setMessages(prev => [...prev, { role: "assistant", content: fullContent }]);
           setIsStreaming(false);
           setStreamingContent("");
           setAbortController(null);
@@ -129,7 +129,7 @@ export default function Chat() {
       }
       setAbortController(null);
     }
-  }, [selectedModel, messages, temperature, maxTokens, streamingContent]);
+  }, [selectedModel, messages, temperature, maxTokens]);
 
   useEffect(() => {
     if (isStreaming && streamingContent && messages.filter(m => m.role === "user").length === 1) {
