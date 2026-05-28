@@ -34,7 +34,7 @@ export async function createChatCompletion(
   onDone: () => void,
   _onError: (err: Error) => void
 ): Promise<void> {
-  const response = await api.post("/v1/chat/completions", {
+  const response = await api.post("/api/chat/completions", {
     ...params,
     stream: true,
   }, {
