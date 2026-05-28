@@ -17,10 +17,15 @@ export interface ParsedContent {
 export function parseThink(content: string): ParsedContent {
   const closed = content.match(/^<think>([\s\S]*?)<\/think>\s*/);
   if (closed) {
-    return { thinking: closed[1].trim(), thinkingOpen: false, answer: content.slice(closed[0].length) };
+    const thinkingText = closed[1].trim();
+    if (!thinkingText) {
+      return { thinking: null, thinkingOpen: false, answer: content.slice(closed[0].length) };
+    }
+    return { thinking: thinkingText, thinkingOpen: false, answer: content.slice(closed[0].length) };
   }
   if (content.startsWith("<think>")) {
-    return { thinking: content.slice(7), thinkingOpen: true, answer: "" };
+    const partial = content.slice(7).trim();
+    return { thinking: partial || null, thinkingOpen: true, answer: "" };
   }
   return { thinking: null, thinkingOpen: false, answer: content };
 }

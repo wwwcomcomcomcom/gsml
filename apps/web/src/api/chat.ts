@@ -73,6 +73,7 @@ export async function createChatCompletion(
   let buffer = "";
   let accumulated = "";
   let finished = false;
+  let reasoningOpen = false;
 
   try {
     while (true) {
@@ -88,14 +89,34 @@ export async function createChatCompletion(
         if (!trimmed || !trimmed.startsWith("data: ")) continue;
         const data = trimmed.slice(6);
         if (data === "[DONE]") {
+          if (reasoningOpen) {
+            accumulated += "</think>";
+            onChunk("</think>");
+          }
           finished = true;
           onDone(accumulated);
           return;
         }
         try {
           const parsed = JSON.parse(data);
-          const content = parsed.choices?.[0]?.delta?.content;
-          if (content) {
+          const delta = parsed.choices?.[0]?.delta;
+          const content: string | undefined = delta?.content;
+          const reasoningContent: string | undefined = delta?.reasoning_content ?? delta?.thinking;
+
+          if (reasoningContent) {
+            if (!reasoningOpen) {
+              accumulated += "<think>";
+              onChunk("<think>");
+              reasoningOpen = true;
+            }
+            accumulated += reasoningContent;
+            onChunk(reasoningContent);
+          } else if (content) {
+            if (reasoningOpen) {
+              accumulated += "</think>";
+              onChunk("</think>");
+              reasoningOpen = false;
+            }
             accumulated += content;
             onChunk(content);
           }
