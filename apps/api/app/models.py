@@ -59,4 +59,5 @@ class RequestLog(Base):
     status_code: Mapped[int] = mapped_column(Integer)
     latency_ms: Mapped[int] = mapped_column(Integer)
     ttft_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    source: Mapped[str | None] = mapped_column(String, nullable=True)  # "api" | "web"
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, index=True)

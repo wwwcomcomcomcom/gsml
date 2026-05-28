@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 from .config import settings
@@ -17,6 +17,14 @@ def init_db() -> None:
     from . import models  # noqa: F401  ensure models are imported before create_all
 
     Base.metadata.create_all(bind=engine)
+
+    # 기존 DB에 source 컬럼이 없을 경우 자동으로 추가
+    with engine.connect() as conn:
+        try:
+            conn.execute(text("ALTER TABLE request_logs ADD COLUMN source VARCHAR"))
+            conn.commit()
+        except Exception:
+            pass  # 이미 존재하면 무시
 
 
 def get_db():
