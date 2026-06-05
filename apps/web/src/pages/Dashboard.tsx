@@ -20,7 +20,6 @@ export default function Dashboard() {
           {me && <p className="muted" style={{ margin: "4px 0 0" }}>{me.name} · {me.email}</p>}
         </div>
         <div className="row">
-          <button onClick={() => navigate("/chat")}>채팅</button>
           <button className="secondary" onClick={() => { authStore.clear(); navigate("/", { replace: true }); }}>로그아웃</button>
         </div>
       </div>

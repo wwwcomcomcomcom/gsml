@@ -3,7 +3,6 @@ import { authStore } from "./lib/auth";
 import Login from "./pages/Login";
 import Callback from "./pages/Callback";
 import Dashboard from "./pages/Dashboard";
-import Chat from "./pages/Chat";
 
 function Protected({ children }: { children: JSX.Element }) {
   return authStore.isAuthed() ? children : <Navigate to="/" replace />;
@@ -19,14 +18,6 @@ export default function App() {
         element={
           <Protected>
             <Dashboard />
-          </Protected>
-        }
-      />
-      <Route
-        path="/chat"
-        element={
-          <Protected>
-            <Chat />
           </Protected>
         }
       />
