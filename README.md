@@ -1,6 +1,6 @@
 # GSML
 
-llama.cpp를 OpenAI 호환 API로 감싸 사용자에게 API Key 형태로 배포하는 사내 서비스.
+llama.cpp를 OpenAI 호환 API로 감싸 사용자에게 API Key 형태로 배포하는 교내 서비스.
 
 ## 구성
 
